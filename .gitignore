@@ -1,0 +1,11 @@
+# Typescript
+
+node_modules/
+.env.local
+build/
+.env
+.next/
+coverage/
+*.js.map
+*.log
+npm-debug.log*
