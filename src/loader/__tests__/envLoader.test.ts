@@ -30,6 +30,14 @@ describe('loadFromFile', () => {
     expect(result.source).toBe(tmpFile);
     fs.unlinkSync(tmpFile);
   });
+
+  it('handles an empty file gracefully', () => {
+    const tmpFile = writeTempFile('');
+    const result = loadFromFile(tmpFile);
+    expect(result.error).toBeUndefined();
+    expect(result.map).toEqual({});
+    fs.unlinkSync(tmpFile);
+  });
 });
 
 describe('loadFromString', () => {
@@ -47,6 +55,12 @@ describe('loadFromString', () => {
   it('uses custom label when provided', () => {
     const result = loadFromString('X=1', 'staging.env');
     expect(result.source).toBe('staging.env');
+  });
+
+  it('handles an empty string gracefully', () => {
+    const result = loadFromString('');
+    expect(result.error).toBeUndefined();
+    expect(result.map).toEqual({});
   });
 });
 
@@ -74,5 +88,11 @@ describe('loadFromEnv', () => {
     expect(result.map).toMatchObject({ PORT: '3000', HOST: 'localhost' });
     expect(result.map['OTHER_KEY']).toBeUndefined();
     expect(result.source).toBe('process.env[APP_*]');
+  });
+
+  it('returns an empty map when prefix matches no keys', () => {
+    const result = loadFromEnv('NONEXISTENT_PREFIX_XYZ_');
+    expect(result.map).toEqual({});
+    expect(result.source).toBe('process.env[NONEXISTENT_PREFIX_XYZ_*]');
   });
 });
