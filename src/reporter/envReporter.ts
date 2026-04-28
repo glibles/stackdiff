@@ -36,6 +36,21 @@ function formatEntry(entry: DiffEntry, useColor: boolean): string {
   }
 }
 
+/**
+ * Returns a summary line counting added, removed, and changed entries.
+ */
+function formatSummary(entries: DiffEntry[], useColor: boolean): string {
+  const added = entries.filter((e) => e.type === 'added').length;
+  const removed = entries.filter((e) => e.type === 'removed').length;
+  const changed = entries.filter((e) => e.type === 'changed').length;
+  const parts = [
+    colorize(`+${added}`, ANSI.green, useColor),
+    colorize(`-${removed}`, ANSI.red, useColor),
+    colorize(`~${changed}`, ANSI.yellow, useColor),
+  ];
+  return parts.join('  ');
+}
+
 export function renderTextReport(
   result: EnvDiffResult,
   options: ReportOptions = {}
@@ -53,6 +68,7 @@ export function renderTextReport(
     useColor
   );
   lines.push(header);
+  lines.push(formatSummary(result.entries, useColor));
   lines.push('');
 
   for (const entry of result.entries) {
