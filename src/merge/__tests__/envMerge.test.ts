@@ -48,6 +48,20 @@ describe('mergeEnvMaps', () => {
     mergeEnvMaps(base, incoming, { strategy: 'theirs' });
     expect(base).toEqual(baseCopy);
   });
+
+  it('does not mutate incoming map', () => {
+    const incomingCopy = { ...incoming };
+    mergeEnvMaps(base, incoming, { strategy: 'theirs' });
+    expect(incoming).toEqual(incomingCopy);
+  });
+
+  it('merges with empty incoming map', () => {
+    const result = mergeEnvMaps(base, {}, { strategy: 'ours' });
+    expect(result.merged).toEqual(base);
+    expect(result.added).toHaveLength(0);
+    expect(result.conflicts).toHaveLength(0);
+    expect(result.overwritten).toHaveLength(0);
+  });
 });
 
 describe('formatMergeSummary', () => {
