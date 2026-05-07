@@ -75,3 +75,12 @@ export function formatValidationReport(report: ValidationReport): string {
   }
   return `Validation failed:\n${lines.join("\n")}`;
 }
+
+/**
+ * Returns only the validation results that failed.
+ * Useful for quickly inspecting which keys have issues
+ * without iterating over the full results array.
+ */
+export function getFailedResults(report: ValidationReport): ValidationResult[] {
+  return report.results.filter((r) => !r.valid);
+}
