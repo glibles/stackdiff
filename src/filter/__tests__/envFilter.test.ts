@@ -1,87 +1,95 @@
-import {
-  matchesPattern,
-  keyMatchesAny,
-  filterEnvMap,
-  formatFilterSummary,
-} from '../envFilter';
-import { EnvMap } from '../../parser';
+import { matchesPattern, keyMatchesAny, filterEnvMap, formatFilterSummary } from '../envFilter';
 
 describe('matchesPattern', () => {
   it('matches exact key', () => {
-    expect(matchesPattern('DATABASE_URL', 'DATABASE_URL')).toBe(true);
+    expect(matchesPattern('FOO', 'FOO')).toBe(true);
+    expect(matchesPattern('FOO', 'BAR')).toBe(false);
   });
 
-  it('does not match different key', () => {
-    expect(matchesPattern('DATABASE_URL', 'REDIS_URL')).toBe(false);
+  it('matches wildcard *', () => {
+    expect(matchesPattern('FOO', '*')).toBe(true);
+    expect(matchesPattern('', '*')).toBe(true);
   });
 
-  it('matches wildcard suffix', () => {
-    expect(matchesPattern('AWS_ACCESS_KEY', 'AWS_*')).toBe(true);
+  it('matches prefix wildcard AWS_*', () => {
+    expect(matchesPattern('AWS_SECRET', 'AWS_*')).toBe(true);
+    expect(matchesPattern('AWS_KEY', 'AWS_*')).toBe(true);
+    expect(matchesPattern('DB_HOST', 'AWS_*')).toBe(false);
   });
 
-  it('matches wildcard prefix', () => {
+  it('matches suffix wildcard *_KEY', () => {
+    expect(matchesPattern('API_KEY', '*_KEY')).toBe(true);
     expect(matchesPattern('SECRET_KEY', '*_KEY')).toBe(true);
-  });
-
-  it('is case-sensitive by default', () => {
-    expect(matchesPattern('database_url', 'DATABASE_URL')).toBe(false);
-  });
-
-  it('is case-insensitive when flag set', () => {
-    expect(matchesPattern('database_url', 'DATABASE_URL', false)).toBe(true);
+    expect(matchesPattern('API_SECRET', '*_KEY')).toBe(false);
   });
 });
 
 describe('keyMatchesAny', () => {
-  it('returns true when at least one pattern matches', () => {
-    expect(keyMatchesAny('AWS_SECRET', ['DB_*', 'AWS_*'])).toBe(true);
+  it('returns true if any pattern matches', () => {
+    expect(keyMatchesAny('AWS_KEY', ['DB_*', 'AWS_*'])).toBe(true);
   });
 
-  it('returns false when no pattern matches', () => {
-    expect(keyMatchesAny('PORT', ['DB_*', 'AWS_*'])).toBe(false);
+  it('returns false if no pattern matches', () => {
+    expect(keyMatchesAny('FOO', ['BAR', 'BAZ'])).toBe(false);
+  });
+
+  it('returns false for empty patterns', () => {
+    expect(keyMatchesAny('FOO', [])).toBe(false);
   });
 });
 
 describe('filterEnvMap', () => {
-  const env: EnvMap = {
-    AWS_ACCESS_KEY: 'key',
-    AWS_SECRET: 'secret',
-    DATABASE_URL: 'postgres://localhost',
+  const env = {
+    AWS_KEY: '123',
+    AWS_SECRET: 'abc',
+    DB_HOST: 'localhost',
+    DB_PASS: 'secret',
     PORT: '3000',
-    NODE_ENV: 'production',
   };
 
-  it('includes only matching keys', () => {
-    const result = filterEnvMap(env, { patterns: ['AWS_*'], mode: 'include' });
-    expect(Object.keys(result)).toEqual(['AWS_ACCESS_KEY', 'AWS_SECRET']);
+  it('returns all keys when no patterns given', () => {
+    const { result, included, excluded } = filterEnvMap(env);
+    expect(Object.keys(result)).toHaveLength(5);
+    expect(excluded).toHaveLength(0);
+    expect(included).toHaveLength(5);
   });
 
-  it('excludes matching keys', () => {
-    const result = filterEnvMap(env, { patterns: ['AWS_*'], mode: 'exclude' });
-    expect(Object.keys(result)).not.toContain('AWS_ACCESS_KEY');
-    expect(Object.keys(result)).not.toContain('AWS_SECRET');
-    expect(result.PORT).toBe('3000');
+  it('filters by include pattern', () => {
+    const { result, included, excluded } = filterEnvMap(env, ['AWS_*']);
+    expect(Object.keys(result)).toEqual(['AWS_KEY', 'AWS_SECRET']);
+    expect(included).toEqual(['AWS_KEY', 'AWS_SECRET']);
+    expect(excluded).toHaveLength(3);
   });
 
-  it('returns empty map when all keys excluded', () => {
-    const result = filterEnvMap(env, { patterns: ['*'], mode: 'exclude' });
-    expect(Object.keys(result)).toHaveLength(0);
+  it('filters by exclude pattern', () => {
+    const { result, excluded } = filterEnvMap(env, [], ['DB_*']);
+    expect(result).not.toHaveProperty('DB_HOST');
+    expect(result).not.toHaveProperty('DB_PASS');
+    expect(excluded).toContain('DB_HOST');
+    expect(excluded).toContain('DB_PASS');
   });
 
-  it('returns full map when no patterns match in include mode', () => {
-    const result = filterEnvMap(env, { patterns: ['NONEXISTENT_*'], mode: 'include' });
-    expect(Object.keys(result)).toHaveLength(0);
+  it('applies include then exclude', () => {
+    const { result } = filterEnvMap(env, ['DB_*', 'PORT'], ['DB_PASS']);
+    expect(Object.keys(result)).toEqual(['DB_HOST', 'PORT']);
+  });
+
+  it('preserves values in result', () => {
+    const { result } = filterEnvMap(env, ['PORT']);
+    expect(result['PORT']).toBe('3000');
   });
 });
 
 describe('formatFilterSummary', () => {
-  it('produces a summary string', () => {
-    const original: EnvMap = { A: '1', B: '2', C: '3' };
-    const filtered: EnvMap = { A: '1' };
-    const summary = formatFilterSummary(original, filtered, { patterns: ['A'], mode: 'include' });
-    expect(summary).toContain('Keys before : 3');
-    expect(summary).toContain('Keys after  : 1');
-    expect(summary).toContain('Removed     : 2');
-    expect(summary).toContain('include');
+  it('shows included and excluded counts', () => {
+    const summary = formatFilterSummary(['A', 'B'], ['C']);
+    expect(summary).toContain('Included: 2');
+    expect(summary).toContain('Excluded: 1');
+    expect(summary).toContain('C');
+  });
+
+  it('omits excluded key list when none excluded', () => {
+    const summary = formatFilterSummary(['A'], []);
+    expect(summary).not.toContain('Excluded keys');
   });
 });

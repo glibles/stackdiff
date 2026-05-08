@@ -1,40 +1,44 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { loadFromFile } from '../loader';
-import { filterEnvMap, formatFilterSummary, FilterMode } from './envFilter';
+import { loadFromFile, loadFromEnv } from '../loader';
+import { filterEnvMap, formatFilterSummary } from './envFilter';
 import { exportAsDotenv } from '../export';
+import * as fs from 'fs';
 
 export interface FilterCommandOptions {
-  input: string;
-  patterns: string[];
-  mode: FilterMode;
+  input?: string;
   output?: string;
-  summary?: boolean;
-  caseSensitive?: boolean;
+  include?: string[];
+  exclude?: string[];
+  prefix?: string;
+  fromEnv?: boolean;
+  silent?: boolean;
 }
 
 export async function runFilterCommand(options: FilterCommandOptions): Promise<void> {
-  const { input, patterns, mode, output, summary = false, caseSensitive = true } = options;
+  const envMap = options.fromEnv
+    ? loadFromEnv()
+    : loadFromFile(options.input ?? '.env');
 
-  if (patterns.length === 0) {
-    throw new Error('At least one pattern must be provided.');
+  const includePatterns = options.include ?? [];
+  const excludePatterns = options.exclude ?? [];
+
+  if (options.prefix) {
+    includePatterns.push(`${options.prefix}*`);
   }
 
-  const env = loadFromFile(path.resolve(input));
+  const { result, included, excluded } = filterEnvMap(envMap, includePatterns, excludePatterns);
 
-  const filtered = filterEnvMap(env, { patterns, mode, caseSensitive });
+  if (!options.silent) {
+    console.log(formatFilterSummary(included, excluded));
+  }
 
-  const dotenv = exportAsDotenv(filtered);
+  const serialized = exportAsDotenv(result);
 
-  if (output) {
-    fs.writeFileSync(path.resolve(output), dotenv, 'utf-8');
-    if (summary) {
-      console.log(formatFilterSummary(env, filtered, { patterns, mode, caseSensitive }));
+  if (options.output) {
+    fs.writeFileSync(options.output, serialized, 'utf-8');
+    if (!options.silent) {
+      console.log(`Written to ${options.output}`);
     }
   } else {
-    process.stdout.write(dotenv);
-    if (summary) {
-      console.error(formatFilterSummary(env, filtered, { patterns, mode, caseSensitive }));
-    }
+    process.stdout.write(serialized);
   }
 }

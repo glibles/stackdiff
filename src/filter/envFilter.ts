@@ -1,62 +1,78 @@
-import { EnvMap } from '../parser';
+export type EnvMap = Record<string, string>;
 
-export type FilterMode = 'include' | 'exclude';
-
-export interface FilterOptions {
-  patterns: string[];
-  mode: FilterMode;
-  caseSensitive?: boolean;
+export interface FilterResult {
+  result: EnvMap;
+  included: string[];
+  excluded: string[];
 }
 
 /**
- * Tests whether a key matches any of the given glob-style patterns.
- * Supports * as a wildcard.
+ * Returns true if key matches a glob-style pattern.
+ * Supports '*' as wildcard.
  */
-export function matchesPattern(key: string, pattern: string, caseSensitive = true): boolean {
-  const k = caseSensitive ? key : key.toUpperCase();
-  const p = caseSensitive ? pattern : pattern.toUpperCase();
-  const escaped = p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-  return new RegExp(`^${escaped}$`).test(k);
+export function matchesPattern(key: string, pattern: string): boolean {
+  if (pattern === '*') return true;
+  if (pattern.endsWith('*')) {
+    const prefix = pattern.slice(0, -1);
+    return key.startsWith(prefix);
+  }
+  if (pattern.startsWith('*')) {
+    const suffix = pattern.slice(1);
+    return key.endsWith(suffix);
+  }
+  return key === pattern;
 }
 
 /**
- * Returns true if the key matches at least one pattern in the list.
+ * Returns true if key matches any of the given patterns.
  */
-export function keyMatchesAny(key: string, patterns: string[], caseSensitive = true): boolean {
-  return patterns.some((p) => matchesPattern(key, p, caseSensitive));
+export function keyMatchesAny(key: string, patterns: string[]): boolean {
+  return patterns.some((p) => matchesPattern(key, p));
 }
 
 /**
- * Filters an EnvMap based on include/exclude patterns.
+ * Filters an EnvMap by include/exclude patterns.
+ * Include patterns take priority: if provided, only matching keys are kept.
+ * Exclude patterns then remove keys from the result.
+ * If neither is provided, all keys are included.
  */
-export function filterEnvMap(env: EnvMap, options: FilterOptions): EnvMap {
-  const { patterns, mode, caseSensitive = true } = options;
-  const result: EnvMap = {};
+export function filterEnvMap(
+  envMap: EnvMap,
+  includePatterns: string[] = [],
+  excludePatterns: string[] = []
+): FilterResult {
+  const allKeys = Object.keys(envMap);
 
-  for (const [key, value] of Object.entries(env)) {
-    const matches = keyMatchesAny(key, patterns, caseSensitive);
-    const keep = mode === 'include' ? matches : !matches;
-    if (keep) {
-      result[key] = value;
-    }
+  let candidateKeys: string[];
+
+  if (includePatterns.length > 0) {
+    candidateKeys = allKeys.filter((k) => keyMatchesAny(k, includePatterns));
+  } else {
+    candidateKeys = [...allKeys];
   }
 
-  return result;
+  const includedKeys = candidateKeys.filter(
+    (k) => excludePatterns.length === 0 || !keyMatchesAny(k, excludePatterns)
+  );
+
+  const excludedKeys = allKeys.filter((k) => !includedKeys.includes(k));
+
+  const result: EnvMap = {};
+  for (const key of includedKeys) {
+    result[key] = envMap[key];
+  }
+
+  return { result, included: includedKeys, excluded: excludedKeys };
 }
 
-/**
- * Returns a human-readable summary of the filter operation.
- */
-export function formatFilterSummary(original: EnvMap, filtered: EnvMap, options: FilterOptions): string {
-  const originalCount = Object.keys(original).length;
-  const filteredCount = Object.keys(filtered).length;
-  const removed = originalCount - filteredCount;
+export function formatFilterSummary(included: string[], excluded: string[]): string {
   const lines: string[] = [
-    `Filter mode : ${options.mode}`,
-    `Patterns    : ${options.patterns.join(', ')}`,
-    `Keys before : ${originalCount}`,
-    `Keys after  : ${filteredCount}`,
-    `Removed     : ${removed}`,
+    `Filter summary:`,
+    `  Included: ${included.length} key(s)`,
+    `  Excluded: ${excluded.length} key(s)`,
   ];
+  if (excluded.length > 0) {
+    lines.push(`  Excluded keys: ${excluded.join(', ')}`);
+  }
   return lines.join('\n');
 }
